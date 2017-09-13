@@ -1,0 +1,16 @@
+{
+  "name": "hw1",
+  "version": "1.0.0",
+  "description": "HW1",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/brettbonar/CS5200.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/brettbonar/CS5200/issues"
+  },
+  "homepage": "https://github.com/brettbonar/CS5200#readme"
+}
