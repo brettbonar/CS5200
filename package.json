@@ -12,5 +12,8 @@
   "bugs": {
     "url": "https://github.com/brettbonar/CS5200/issues"
   },
-  "homepage": "https://github.com/brettbonar/CS5200#readme"
+  "homepage": "https://github.com/brettbonar/CS5200#readme",
+  "devDependencies": {
+    "electron": "1.7.6"
+  }
 }
