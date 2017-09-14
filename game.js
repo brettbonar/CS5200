@@ -1,10 +1,9 @@
 "use strict";
-const messaging = require("./messaging");
+const client = require("./client");
 
 const config = require("config");
 const inquirer = require("inquirer");
-const log4js = require("log4js");
-const logger = log4js.getLogger();
+const logger = require("./logger").getLogger("game");
 const _ = require("lodash");
 
 var commands = {};
@@ -12,31 +11,43 @@ var gameDef = {};
 var responses = {};
 var settings = config.get("server");
 
-function promptGame() {
+function getPrompt(newGame) {
+  if (newGame) {
+    return "Choose a command:";
+  }
+  return "Choose a command: \nDefinition: " + gameDef.definition
+    + "\n" + "Hint: " + gameDef.hint + " (" + gameDef.hint.length + " characters)";
+}
+
+function promptGame(newGame) {
+  var choices = [{
+      name: "New Game",
+      value: "startGame", 
+    }, {
+      name: "Set Config",
+      value: "setConfig"
+    }, {
+      name: "Quit",
+      value: "quit"
+    }
+  ];
+
+  if (!newGame) {
+    choices = [{
+      name: "Get Hint",
+      value: "getHint"
+    }, {
+      name: "Guess",
+      value: "startGuess"
+    }].concat(choices);
+  }
+  
   var questions = [
     {
       name: "command",
       type: "list",
-      message: "Choose a command: \nDefinition: " + gameDef.definition
-        + "\n" + "Hint: " + gameDef.hint + " (" + gameDef.hint.length + " characters)",
-      choices: [
-        {
-          name: "Get Hint",
-          value: "getHint"
-        }, {
-          name: "Guess",
-          value: "startGuess"
-        }, {
-          name: "New Game",
-          value: "startGame", 
-        }, {
-          name: "Set Config",
-          value: "setConfig"
-        }, {
-          name: "Quit",
-          value: "quit"
-        }
-      ]
+      message: getPrompt(newGame),
+      choices: choices
     }
   ];
   
@@ -64,13 +75,13 @@ commands.setConfig = function () {
 };
 
 commands.getHint = function () {
-  messaging.sendMessage("getHint", {
+  client.sendMessage("getHint", {
     id: gameDef.id
   });
 }
 
 commands.startGame = function () {
-  messaging.sendMessage("startGame", {
+  client.sendMessage("startGame", {
     aNum: "A02195862",
     lastName: "Bonar",
     firstName: "Brett",
@@ -83,7 +94,7 @@ commands.startGuess = function () {
     name: "guess",
     message: "Guess:"
   }).then(function (guess) {
-    messaging.sendMessage("guess", {
+    client.sendMessage("guess", {
       id: gameDef.id,
       guess: guess.guess
     });
@@ -91,30 +102,39 @@ commands.startGuess = function () {
 }
 
 commands.quit = function () {
-  messaging.sendMessage("exit", {
+  client.sendMessage("exit", {
     id: gameDef.id
   });
-  process.exit();
 }
 
-messaging.addHandler("answer", function (message) {
-  gameDef.hint = message.hint;
-  // TODO: show score, result?
-  promptGame();
+client.addHandler("answer", function (message) {
+  if (message.result === 1) {
+    console.log("Correct!");
+    console.log("Score: " + message.score);
+    promptGame(true);
+  } else {
+    gameDef.hint = message.hint;
+    console.log("Incorrect!");
+    promptGame();
+  }
 });
 
-messaging.addHandler("heartbeat", function (message) {
-  messaging.sendMessage("ack", {
+client.addHandler("heartbeat", function (message) {
+  client.sendMessage("ack", {
     id: message.id
   });
 });
 
-messaging.addHandler("hint", function (message) {
+client.addHandler("ack", function (message) {
+  process.exit();
+});
+
+client.addHandler("hint", function (message) {
   gameDef.hint = message.hint;
   promptGame();
 });
 
-messaging.addHandler("gameDef", function (message) {
+client.addHandler("gameDef", function (message) {
   gameDef = message;
   promptGame();
 });
@@ -122,6 +142,8 @@ messaging.addHandler("gameDef", function (message) {
 function handleCommand(command) {
   if (commands[command]) {
     commands[command]();
+  } else {
+    logger.error("Invalid command");
   }
 }
 
@@ -134,7 +156,7 @@ function startGame() {
       message: "Choose a command:",
       choices: [
         {
-          name: "Start Game",
+          name: "New Game",
           value: "startGame"
         }, {
           name: "Set Config",
