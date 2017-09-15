@@ -1,15 +1,15 @@
 "use strict";
-const client = require("./client");
 
-const config = require("config");
-const inquirer = require("inquirer");
+const client = require("./client");
+const config = require("./config");
 const logger = require("./logger").getLogger("game");
+
+const inquirer = require("inquirer");
 const _ = require("lodash");
 
 var commands = {};
-var gameDef = {};
+var gameDef;
 var responses = {};
-var settings = config.get("server");
 
 function getPrompt(newGame) {
   if (newGame) {
@@ -67,10 +67,17 @@ commands.setConfig = function () {
   ];
 
   return inquirer.prompt(questions).then(function (answers) {
-    settings = answers;
-    //client.bind(settings.port, settings.host);
-    // TODO: figure out how to set config
-    //config.set("server", settings);
+    // Stop game if changing config
+    if (gameDef) {
+      client.sendMessage("exit", {
+        id: gameDef.id
+      });
+      gameDef = null;
+    }
+    config.set("server:host", answers.host);
+    config.set("server:port", parseInt(answers.port, 10));
+    config.save();
+    startGame();
   });
 };
 
@@ -107,6 +114,10 @@ commands.quit = function () {
   });
 }
 
+commands.exit = function () {
+  process.exit();
+}
+
 client.addHandler("answer", function (message) {
   if (message.result === 1) {
     console.log("Correct!");
@@ -126,7 +137,9 @@ client.addHandler("heartbeat", function (message) {
 });
 
 client.addHandler("ack", function (message) {
-  process.exit();
+  if (gameDef) {
+    process.exit();
+  }
 });
 
 client.addHandler("hint", function (message) {
@@ -161,6 +174,9 @@ function startGame() {
         }, {
           name: "Set Config",
           value: "setConfig"
+        }, {
+          name: "Quit",
+          value: "exit"
         }
       ]
     }

@@ -1,8 +1,8 @@
 "use strict";
 
-const config = require("config");
 const dgram = require("dgram");
 const logger = require("./logger").getLogger("messaging");
+const config = require("./config");
 const _ = require("lodash");
 
 const BYTE = "byte";
@@ -23,83 +23,101 @@ const MESSAGE_TYPES = {
 
 var handlers = {};
 var messageDefs = {
-  startGame: {
-    aNum: STRING,
-    lastName: STRING,
-    firstName: STRING,
-    alias: STRING
-  },
-  gameDef: {
-    id: INT,
-    hint: STRING,
-    definition: STRING
-  },
-  guess: {
-    id: INT,
-    guess: STRING
-  },
-  answer: {
-    id: INT,
-    result: BYTE,
-    score: INT,
-    hint: STRING
-  },
-  getHint: {
-    id: INT
-  },
-  hint: {
-    id: INT,
-    hint: STRING
-  },
-  exit: {
-    id: INT
-  },
-  ack: {
-    id: INT
-  },
-  error: {
-    id: INT,
-    error: STRING
-  },
-  heartbeat: {
-    id: INT
-  }
+  startGame: [{
+    name: "aNum",
+    type: STRING
+  }, {
+    name: "lastName",
+    type: STRING
+  }, {
+    name: "firstName",
+    type: STRING
+  }, {
+    name: "alias",
+    type: STRING
+  }],
+  gameDef: [{
+    name: "id",
+    type: INT
+  }, {
+    name: "hint",
+    type: STRING
+  }, {
+    name: "definition",
+    type: STRING
+  }],
+  guess: [{
+    name: "id",
+    type: INT
+  }, {
+    name: "guess",
+    type: STRING
+  }],
+  answer: [{
+    name: "id",
+    type: INT
+  }, {
+    name: "result",
+    type: BYTE
+  }, {
+    name: "score",
+    type: INT
+  }, {
+    name: "hint",
+    type: STRING
+  }],
+  getHint: [{
+    name: "id",
+    type: INT
+  }],
+  hint: [{
+    name: "id",
+    type: INT
+  }, {
+    name: "hint",
+    type: STRING
+  }],
+  exit: [{
+    name: "id",
+    type: INT
+  }],
+  ack: [{
+    name: "id",
+    type: INT
+  }],
+  error: [{
+    name: "id",
+    type: INT
+  }, {
+    name: "error",
+    type: STRING
+  }],
+  heartbeat: [{
+    name: "id",
+    type: INT
+  }]
 };
 
 var client = dgram.createSocket("udp4");
 client.on("message", handleMessage);
-var settings = config.get("server");
-
-function swapBytes(buffer, offset, end) {
-  offset = offset || 0;
-  end = end || buffer.length - offset;
-  // var l = buffer.length - offset;
-  // if (l & 0x01) {
-  //   throw new Error('Buffer length must be even');
-  // }
-  for (var i = offset; i <= end; i += 2) {
-    var a = buffer[i];
-    buffer[i] = buffer[i+1];
-    buffer[i+1] = a;
-  }
-  return buffer; 
-}
 
 function read2ByteUnicode(buffer, offset, end) {
   offset = offset || 0;
   end = end || buffer.length - offset;
   var buf = Buffer.alloc(end - offset);
   buffer.copy(buf, 0, offset, end);
-  buf = swapBytes(buf);
+  // TRICKY: swap bytes since buffer only handles little endian, but we expect big endian
+  buf.swap16();
   return buf.toString("utf16le");
 }
 
 function get2ByteUnicodeEncoding(value) {
   var encoding = Buffer.alloc(2 + value.length * 2);
-  encoding.writeInt16BE(value.length * 2);
+  encoding.writeInt16LE(value.length * 2);
   var offset = 2;
   encoding.write(value, offset, value.length * 2, "utf16le");
-  encoding = swapBytes(encoding, offset);
+  // TRICKY: swap bytes since buffer only handles little endian, but we expect big endian
+  encoding.swap16();
   return encoding;
 }
 
@@ -113,7 +131,9 @@ function decode(message) {
   if (messageType) {
     var messageDef = messageDefs[messageType];
     var offset = 2;
-    _.forEach(messageDef, function (type, key) {
+    _.forEach(messageDef, function (field) {
+      var type = field.type;
+      var key = field.name;
       if (type === INT) {
         result[key] = message.readInt16BE(offset);
         offset += 2;
@@ -140,9 +160,9 @@ function decode(message) {
 }
 
 function handleMessage(message, remote) {
-  if (remote.port === settings.port && remote.address === settings.host) {
+  if (remote.port === config.get("server:port") && remote.address === config.get("server:host")) {
     var msg = decode(message);
-    logger.debug("Decoding message of type \"" + msg.type + "\": " + message);
+    logger.debug("Decoding message of type \"" + msg.type + "\": " + message.toString("hex"));
     logger.debug("Decoded to: " + JSON.stringify(msg.message));
     if (msg) {
       if (handlers[msg.type]) {
@@ -165,9 +185,10 @@ function encode(type, message) {
   encodings.push(typeEnc);
 
   var messageDef = messageDefs[type];
-  _.forEach(messageDef, function (type, key) {
+  _.forEach(messageDef, function (field) {
     var encoding;
-    var value = message[key];
+    var type = field.type;
+    var value = message[field.name];
     if (type === STRING) {
       encoding = get2ByteUnicodeEncoding(value);
     } else if (type === INT) {
@@ -188,11 +209,13 @@ function encode(type, message) {
 
 function sendMessage(type, message) {
   var msg = encode(type, message);
-  logger.debug("Encoding message of type \"" + type + "\": " + msg);
-  client.send(msg, 0, msg.length, settings.port, settings.host, function (err, bytes) {
-    if (err) {
-      logger.error("Failed to send message: " + err);
-    }
+  logger.debug("Encoding message of type \"" + type + "\": " + JSON.stringify(message));
+  logger.debug("Encoded to: " + msg.toString("hex"));
+  client.send(msg, 0, msg.length, config.get("server:port"), config.get("server:host"),
+    function (err, bytes) {
+      if (err) {
+        logger.error("Failed to send message: " + err);
+      }
   });
 }
 

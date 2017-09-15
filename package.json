@@ -18,5 +18,8 @@
     "electron": "1.7.6",
     "mocha": "^3.5.3",
     "sinon": "^3.2.1"
+  },
+  "scripts": {
+	"test": "mocha"
   }
 }

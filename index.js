@@ -1,12 +1,5 @@
 "use strict";
-const game = require("./game");
 
-// const electron = require("electron");
-// const app = electron.app;
+// To build exe: pkg index.js -t node6-win-x64 -o GameClient.exe
 
-// app.on("ready", game.startGame);
-// app.on("window-all-closed", () => {
-//   app.quit();
-// });
-
-game.startGame();
+require("./game").startGame();
